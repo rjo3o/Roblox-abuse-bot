@@ -4,7 +4,12 @@ const {
 } = require('discord.js');
 if (process.env.NODE_ENV !== 'production') { try { require('dotenv').config(); } catch(e) {} }
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+  ]
+});
 
 const DISCORD_TOKEN     = process.env.DISCORD_TOKEN;
 const CLIENT_ID         = process.env.CLIENT_ID;
@@ -34,8 +39,11 @@ async function registerCommands() {
   }
 }
 
-function hasAllowedRole(member) {
-  if (member.guild.ownerId === member.id) return true;
+function hasAllowedRole(interaction) {
+  const member = interaction.member;
+  const guild  = interaction.guild;
+  if (!member || !guild) return false;
+  if (guild.ownerId === member.id) return true;
   return ALLOWED_ROLE_IDS.some(roleId => member.roles.cache.has(roleId));
 }
 
@@ -43,7 +51,7 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName !== 'admin-abuse') return;
 
-  if (!hasAllowedRole(interaction.member)) {
+  if (!hasAllowedRole(interaction)) {
     return interaction.reply({
       content: '❌ Vous n\'avez pas la permission d\'utiliser cette commande.',
       ephemeral: true
