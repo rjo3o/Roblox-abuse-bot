@@ -19,6 +19,16 @@ const ABUSE_CHANNEL_ID = process.env.ABUSE_CHANNEL_ID;
 const ROBLOX_PLACE_ID  = process.env.ROBLOX_PLACE_ID;
 const ALLOWED_ROLE_IDS = (process.env.ALLOWED_ROLE_IDS || '').split(',').map(r => r.trim()).filter(Boolean);
 
+// ─── État du compte à rebours ─────────────────────────────────────
+let countdownActive  = false;
+let countdownTimers  = [];
+
+function clearCountdown() {
+  countdownTimers.forEach(t => clearTimeout(t));
+  countdownTimers = [];
+  countdownActive = false;
+}
+
 // ─── Bouton Jouer ─────────────────────────────────────────────────
 function playButton() {
   return new ActionRowBuilder().addComponents(
@@ -46,6 +56,11 @@ async function registerCommands() {
     new SlashCommandBuilder()
       .setName('admin-abuse-2h')
       .setDescription('Lancer un Admin Abuse dans 2 heures avec compte à rebours')
+      .toJSON(),
+
+    new SlashCommandBuilder()
+      .setName('admin-abuse-stop')
+      .setDescription('Annuler le compte à rebours Admin Abuse en cours')
       .toJSON(),
   ];
 
@@ -114,30 +129,20 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ content: '❌ Vous n\'avez pas la permission d\'utiliser cette commande.', ephemeral: true });
     }
 
+    if (countdownActive) {
+      return interaction.reply({ content: '⚠️ Un compte à rebours est déjà en cours ! Utilisez `/admin-abuse-stop` pour l\'annuler d\'abord.', ephemeral: true });
+    }
+
     await interaction.deferReply({ ephemeral: true });
 
     try {
       const channel = await client.channels.fetch(ABUSE_CHANNEL_ID);
       if (!channel) return interaction.editReply({ content: '❌ Salon introuvable.' });
 
+      countdownActive = true;
       const startTime = Date.now();
+      const debutTs   = Math.floor((startTime + 2 * 60 * 60 * 1000) / 1000);
 
-      // Fonction pour envoyer une annonce
-      async function sendAnnonce(titre, description, couleur, restant) {
-        const ts = Math.floor((startTime + (2 * 60 * 60 * 1000) - restant) / 1000);
-        const embed = new EmbedBuilder()
-          .setTitle(titre)
-          .setDescription(description)
-          .setColor(couleur)
-          .addFields({ name: '⏰  Heure de début', value: `<t:${Math.floor((startTime + 2 * 60 * 60 * 1000) / 1000)}:T>`, inline: true })
-          .setFooter({ text: 'Admin Abuse Event' })
-          .setTimestamp();
-        await channel.send({ content: '@everyone', embeds: [embed], components: [playButton()] });
-      }
-
-      const debutTs = Math.floor((startTime + 2 * 60 * 60 * 1000) / 1000);
-
-      // ── Annonce initiale (maintenant)
       const embedDebut = new EmbedBuilder()
         .setTitle('🚨  Admin Abuse dans 2 heures !')
         .setDescription('Un **Admin Abuse** est prévu dans **2 heures** ! Préparez-vous et rejoignez le jeu !')
@@ -147,75 +152,71 @@ client.on('interactionCreate', async interaction => {
         .setTimestamp();
       await channel.send({ content: '@everyone', embeds: [embedDebut], components: [playButton()] });
 
-      await interaction.editReply({ content: `✅ Compte à rebours lancé ! Les rappels seront postés automatiquement dans <#${ABUSE_CHANNEL_ID}>.` });
+      await interaction.editReply({ content: `✅ Compte à rebours lancé dans <#${ABUSE_CHANNEL_ID}>.\nUtilisez \`/admin-abuse-stop\` pour annuler.` });
       console.log(`[${new Date().toLocaleTimeString()}] Admin Abuse 2h lancé`);
 
-      // ── Rappel 1h restant
-      setTimeout(async () => {
-        const embed = new EmbedBuilder()
-          .setTitle('⏳  Admin Abuse dans 1 heure !')
-          .setDescription('Plus qu\'**1 heure** avant le début de l\'Admin Abuse ! Rejoignez le jeu !')
-          .setColor(0xE67E22)
-          .addFields({ name: '⏰  Heure de début', value: `<t:${debutTs}:T>`, inline: true })
-          .setFooter({ text: 'Admin Abuse Event' })
-          .setTimestamp();
-        await channel.send({ content: '@everyone', embeds: [embed], components: [playButton()] });
-        console.log(`[${new Date().toLocaleTimeString()}] Rappel 1h envoyé`);
-      }, 60 * 60 * 1000);
+      const rappels = [
+        { delai: 60,  titre: '⏳  Admin Abuse dans 1 heure !',   desc: 'Plus qu\'**1 heure** avant le début ! Rejoignez le jeu !',         couleur: 0xE67E22 },
+        { delai: 90,  titre: '⏳  Admin Abuse dans 30 minutes !', desc: 'Plus que **30 minutes** ! Connectez-vous au jeu maintenant !',     couleur: 0xE74C3C },
+        { delai: 105, titre: '🔥  Admin Abuse dans 15 minutes !', desc: 'Plus que **15 minutes** ! Tout le monde en jeu !!',               couleur: 0xE74C3C },
+        { delai: 115, titre: '🔥  Admin Abuse dans 5 minutes !',  desc: 'Plus que **5 minutes** !! Tout le monde doit être connecté !!',   couleur: 0xC0392B },
+        { delai: 120, titre: '🎉  L\'Admin Abuse a commencé !',   desc: '**L\'Admin Abuse est maintenant en cours !!** Rejoignez le jeu !', couleur: 0x2ECC71 },
+      ];
 
-      // ── Rappel 30 min restant
-      setTimeout(async () => {
-        const embed = new EmbedBuilder()
-          .setTitle('⏳  Admin Abuse dans 30 minutes !')
-          .setDescription('Plus que **30 minutes** ! Connectez-vous au jeu maintenant !')
-          .setColor(0xE74C3C)
-          .addFields({ name: '⏰  Heure de début', value: `<t:${debutTs}:T>`, inline: true })
-          .setFooter({ text: 'Admin Abuse Event' })
-          .setTimestamp();
-        await channel.send({ content: '@everyone', embeds: [embed], components: [playButton()] });
-        console.log(`[${new Date().toLocaleTimeString()}] Rappel 30min envoyé`);
-      }, 90 * 60 * 1000);
-
-      // ── Rappel 15 min restant
-      setTimeout(async () => {
-        const embed = new EmbedBuilder()
-          .setTitle('🔥  Admin Abuse dans 15 minutes !')
-          .setDescription('Plus que **15 minutes** ! Tout le monde en jeu !!')
-          .setColor(0xE74C3C)
-          .addFields({ name: '⏰  Heure de début', value: `<t:${debutTs}:T>`, inline: true })
-          .setFooter({ text: 'Admin Abuse Event' })
-          .setTimestamp();
-        await channel.send({ content: '@everyone', embeds: [embed], components: [playButton()] });
-        console.log(`[${new Date().toLocaleTimeString()}] Rappel 15min envoyé`);
-      }, 105 * 60 * 1000);
-
-      // ── Rappel 5 min restant
-      setTimeout(async () => {
-        const embed = new EmbedBuilder()
-          .setTitle('🔥  Admin Abuse dans 5 minutes !')
-          .setDescription('Plus que **5 minutes** !! Tout le monde doit être connecté !!')
-          .setColor(0xC0392B)
-          .addFields({ name: '⏰  Heure de début', value: `<t:${debutTs}:T>`, inline: true })
-          .setFooter({ text: 'Admin Abuse Event' })
-          .setTimestamp();
-        await channel.send({ content: '@everyone', embeds: [embed], components: [playButton()] });
-        console.log(`[${new Date().toLocaleTimeString()}] Rappel 5min envoyé`);
-      }, 115 * 60 * 1000);
-
-      // ── Annonce début
-      setTimeout(async () => {
-        const embed = new EmbedBuilder()
-          .setTitle('🎉  L\'Admin Abuse a commencé !')
-          .setDescription('**L\'Admin Abuse est maintenant en cours !!** Rejoignez le jeu immédiatement !')
-          .setColor(0x2ECC71)
-          .setFooter({ text: 'Admin Abuse Event' })
-          .setTimestamp();
-        await channel.send({ content: '@everyone', embeds: [embed], components: [playButton()] });
-        console.log(`[${new Date().toLocaleTimeString()}] Admin Abuse commencé !`);
-      }, 120 * 60 * 1000);
+      rappels.forEach(({ delai, titre, desc, couleur }) => {
+        const t = setTimeout(async () => {
+          if (!countdownActive) return;
+          const embed = new EmbedBuilder()
+            .setTitle(titre)
+            .setDescription(desc)
+            .setColor(couleur)
+            .addFields({ name: '⏰  Heure de début', value: `<t:${debutTs}:T>`, inline: true })
+            .setFooter({ text: 'Admin Abuse Event' })
+            .setTimestamp();
+          await channel.send({ content: '@everyone', embeds: [embed], components: [playButton()] });
+          console.log(`[${new Date().toLocaleTimeString()}] ${titre}`);
+          if (delai === 120) countdownActive = false;
+        }, delai * 60 * 1000);
+        countdownTimers.push(t);
+      });
 
     } catch (err) {
       console.error('Erreur /admin-abuse-2h:', err.message);
+      countdownActive = false;
+      await interaction.editReply({ content: '❌ Erreur : ' + err.message });
+    }
+  }
+
+  // ── /admin-abuse-stop ─────────────────────────────────────────
+  if (interaction.commandName === 'admin-abuse-stop') {
+    if (!hasAllowedRole(interaction)) {
+      return interaction.reply({ content: '❌ Vous n\'avez pas la permission d\'utiliser cette commande.', ephemeral: true });
+    }
+
+    if (!countdownActive) {
+      return interaction.reply({ content: '⚠️ Aucun compte à rebours en cours.', ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    try {
+      clearCountdown();
+
+      const channel = await client.channels.fetch(ABUSE_CHANNEL_ID);
+      if (channel) {
+        const embed = new EmbedBuilder()
+          .setTitle('🛑  Admin Abuse annulé')
+          .setDescription('L\'événement Admin Abuse a été **annulé** par un modérateur.')
+          .setColor(0x95A5A6)
+          .setFooter({ text: 'Admin Abuse Event' })
+          .setTimestamp();
+        await channel.send({ content: '@everyone', embeds: [embed] });
+      }
+
+      await interaction.editReply({ content: '✅ Compte à rebours annulé et annonce postée.' });
+      console.log(`[${new Date().toLocaleTimeString()}] Admin Abuse annulé par ${interaction.member.user.tag}`);
+    } catch (err) {
+      console.error('Erreur /admin-abuse-stop:', err.message);
       await interaction.editReply({ content: '❌ Erreur : ' + err.message });
     }
   }
